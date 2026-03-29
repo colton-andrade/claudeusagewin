@@ -61,5 +61,6 @@ CLAUDE.md
 # Screenshots (optional, remove if you want to include them)
 screenshots/
 
-# Icons (embedded as resources in exe)
-icons/
+# Icons (SVGs embedded as resources in exe, but .ico needed for build)
+icons/*
+!icons/claudeusagewin.ico
