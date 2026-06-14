@@ -25,5 +25,22 @@
   "duration_m": "{0}分",
   "duration_now": "今",
   "tooltip_session": "セッション: {0}% ({1}でリセット)",
-  "tooltip_weekly": "週間: {0}% ({1}でリセット)"
+  "tooltip_weekly": "週間: {0}% ({1}でリセット)",
+  "claude_hooks": "Claude Code Hooks",
+  "enable_hooks": "リアルタイムフック有効化",
+  "copy_hook_config": "フック設定をコピー",
+  "toast_notifications": "通知",
+  "hook_status_listening": "ポートでリッスン中",
+  "hook_status_off": "フックサーバー未起動",
+  "hook_setup_prompt_title": "Claude Code連携",
+  "hook_setup_prompt": "クリックしてリアルタイム通知を有効にする",
+  "live_thinking": "思考中...",
+  "live_tool_use": "使用中: {0}",
+  "live_complete": "タスク完了",
+  "live_waiting": "操作が必要です！",
+  "live_disconnected": "未接続",
+  "toast_task_complete": "Claude Codeがタスクを完了しました",
+  "toast_needs_attention": "Claude Codeが許可を必要としています",
+  "toast_error": "Claude Codeでエラーが発生しました",
+  "toast_token_limit": "Claude Codeがトークン上限に達しました"
 }

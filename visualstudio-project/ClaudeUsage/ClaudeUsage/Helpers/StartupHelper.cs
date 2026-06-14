@@ -72,4 +72,30 @@ public static class StartupHelper
             // Silently fail
         }
     }
+
+    public static string? GetHookSetting(string name)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(SettingsKeyPath, false);
+            return key?.GetValue($"Hook_{name}") as string;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static void SaveHookSetting(string name, string value)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(SettingsKeyPath);
+            key.SetValue($"Hook_{name}", value);
+        }
+        catch
+        {
+            // Silently fail
+        }
+    }
 }

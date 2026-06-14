@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
 using Brushes = System.Windows.Media.Brushes;
-using Color = System.Windows.Media.Color;
 using FlowDirection = System.Windows.FlowDirection;
 using FontFamily = System.Windows.Media.FontFamily;
 using Pen = System.Windows.Media.Pen;
