@@ -25,12 +25,19 @@ public class CredentialService
         );
     }
 
-    private static async Task<bool> IsWslAvailableAsync()
+    /// <summary>
+    /// Returns true only when at least one WSL distribution is registered.
+    /// Reads the Lxss registry key (a passive check) rather than touching
+    /// \\wsl$ or executing wsl.exe, so native-Windows-only machines skip WSL
+    /// discovery entirely and never trigger the OS install prompt (issue #4).
+    /// </summary>
+    private static bool IsWslInstalled()
     {
         try
         {
-            var task = Task.Run(() => Directory.Exists(@"\\wsl$") || Directory.Exists(@"\\wsl.localhost"));
-            return await task.WaitAsync(TimeSpan.FromSeconds(5));
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Lxss");
+            return key != null && key.GetSubKeyNames().Length > 0;
         }
         catch
         {
@@ -66,43 +73,61 @@ public class CredentialService
             }
         }
 
-        // 2. Check WSL paths (try both \\wsl$ and \\wsl.localhost)
-        await Task.Run(() =>
+        // 2. Check WSL paths — only if WSL is actually installed, so native-only
+        //    systems skip these probes. Distros are enumerated dynamically from
+        //    \\wsl.localhost (and legacy \\wsl$) instead of a hardcoded list, so
+        //    any distro name (Ubuntu-24.04, custom images, etc.) is discovered.
+        if (IsWslInstalled())
         {
-            string[] wslDistros = ["Debian", "Ubuntu", "Ubuntu-22.04", "Ubuntu-20.04", "kali-linux"];
-            string[] wslRoots = [@"\\wsl.localhost", @"\\wsl$"];
-
-            foreach (var wslRoot in wslRoots)
-            foreach (var distro in wslDistros)
+            await Task.Run(() =>
             {
-                try
-                {
-                    var wslHomePath = $@"{wslRoot}\{distro}\home";
-                    if (!Directory.Exists(wslHomePath)) continue;
+                string[] wslRoots = [@"\\wsl.localhost", @"\\wsl$"];
 
-                    foreach (var userDir in Directory.GetDirectories(wslHomePath))
+                foreach (var wslRoot in wslRoots)
+                {
+                    string[] distroRoots;
+                    try
                     {
-                        var credPath = Path.Combine(userDir, ".claude", ".credentials.json");
-                        if (File.Exists(credPath))
+                        if (!Directory.Exists(wslRoot)) continue;
+                        distroRoots = Directory.GetDirectories(wslRoot);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"WSL root error ({wslRoot}): {ex.Message}");
+                        continue;
+                    }
+
+                    foreach (var distroRoot in distroRoots)
+                    {
+                        try
                         {
-                            try
+                            var wslHomePath = Path.Combine(distroRoot, "home");
+                            if (!Directory.Exists(wslHomePath)) continue;
+
+                            foreach (var userDir in Directory.GetDirectories(wslHomePath))
                             {
-                                candidates.Add((credPath, File.GetLastWriteTimeUtc(credPath)));
+                                var credPath = Path.Combine(userDir, ".claude", ".credentials.json");
+                                if (!File.Exists(credPath)) continue;
+
+                                try
+                                {
+                                    candidates.Add((credPath, File.GetLastWriteTimeUtc(credPath)));
+                                }
+                                catch
+                                {
+                                    candidates.Add((credPath, DateTime.MinValue));
+                                }
+                                System.Diagnostics.Debug.WriteLine($"Found WSL credentials at: {credPath}");
                             }
-                            catch
-                            {
-                                candidates.Add((credPath, DateTime.MinValue));
-                            }
-                            System.Diagnostics.Debug.WriteLine($"Found WSL credentials at: {credPath}");
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"WSL path error ({distroRoot}): {ex.Message}");
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"WSL path error ({wslRoot}\\{distro}): {ex.Message}");
-                }
-            }
-        }).WaitAsync(TimeSpan.FromSeconds(10));
+            }).WaitAsync(TimeSpan.FromSeconds(10));
+        }
 
         if (candidates.Count == 0)
         {

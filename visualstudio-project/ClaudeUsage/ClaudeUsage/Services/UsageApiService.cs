@@ -20,9 +20,14 @@ public class UsageApiService
 
         try
         {
-            // Try native Windows first, then WSL
-            var version = TryGetVersionFromProcess("claude", "--version")
-                       ?? TryGetVersionFromProcess("wsl", "claude --version");
+            // Try native Windows first. Only fall back to WSL if it's actually
+            // installed — invoking wsl.exe on a system without WSL triggers the
+            // Windows "install WSL" prompt (issue #4).
+            var version = TryGetVersionFromProcess("claude", "--version");
+            if (version == null && IsWslInstalled())
+            {
+                version = TryGetVersionFromProcess("wsl", "claude --version");
+            }
 
             _cachedClaudeCodeVersion = version ?? "2.1.0";
             System.Diagnostics.Debug.WriteLine($"Claude Code version detected: {_cachedClaudeCodeVersion}");
@@ -34,6 +39,25 @@ public class UsageApiService
         }
 
         return _cachedClaudeCodeVersion;
+    }
+
+    /// <summary>
+    /// Returns true only when at least one WSL distribution is registered.
+    /// Reads the Lxss registry key (a passive check) instead of executing
+    /// wsl.exe, which on a WSL-less machine pops the OS install prompt (issue #4).
+    /// </summary>
+    private static bool IsWslInstalled()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Lxss");
+            return key != null && key.GetSubKeyNames().Length > 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string? TryGetVersionFromProcess(string fileName, string arguments)
