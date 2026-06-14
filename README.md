@@ -31,6 +31,8 @@ Rate limits are shared across claude.ai, Claude Code, and its IDE extensions, so
 
 Optionally let the app react to your Claude Code sessions live — both **local** and **remote** (SSH / WSL / another machine):
 
+![Live activity widget](ClaudeUsageHooks.gif)
+
 - **Live activity widget** — a floating desktop pill showing each active session's state: *thinking*, *running a tool*, *waiting for your input*, or *done*. Busy sessions pulse (green), sessions waiting on you pulse amber, and all dots pulse in sync. Multiple sessions appear as compact dots you can click to expand.
 - **Show/hide shortcut** — double-tap a key (default **Right Alt**, rebindable) to toggle the widget from any app.
 - **Toast notifications** — get a Windows toast when a session finishes or needs your input.
