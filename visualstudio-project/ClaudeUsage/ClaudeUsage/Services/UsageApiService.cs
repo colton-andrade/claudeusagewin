@@ -20,22 +20,24 @@ public class UsageApiService
 
         try
         {
-            // Try native Windows first. Only fall back to WSL if it's actually
-            // installed — invoking wsl.exe on a system without WSL triggers the
-            // Windows "install WSL" prompt (issue #4).
-            var version = TryGetVersionFromProcess("claude", "--version");
+            // Try native Windows first via cmd.exe so PATHEXT resolves the npm
+            // `claude.cmd` shim (a bare Process.Start("claude") uses CreateProcess,
+            // which ignores PATHEXT and silently misses .cmd installs). Only fall
+            // back to WSL if it's actually installed — invoking wsl.exe on a system
+            // without WSL triggers the Windows "install WSL" prompt (issue #4).
+            var version = TryGetVersionFromProcess("cmd.exe", "/c claude --version");
             if (version == null && IsWslInstalled())
             {
                 version = TryGetVersionFromProcess("wsl", "claude --version");
             }
 
-            _cachedClaudeCodeVersion = version ?? "2.1.0";
+            _cachedClaudeCodeVersion = version ?? "2.1.100";
             System.Diagnostics.Debug.WriteLine($"Claude Code version detected: {_cachedClaudeCodeVersion}");
         }
         catch
         {
-            _cachedClaudeCodeVersion = "2.1.0";
-            System.Diagnostics.Debug.WriteLine("Claude Code version detection failed, using fallback 2.1.0");
+            _cachedClaudeCodeVersion = "2.1.100";
+            System.Diagnostics.Debug.WriteLine("Claude Code version detection failed, using fallback 2.1.100");
         }
 
         return _cachedClaudeCodeVersion;
@@ -77,23 +79,23 @@ public class UsageApiService
 
             process.Start();
             var output = process.StandardOutput.ReadToEnd().Trim();
+            var error = process.StandardError.ReadToEnd().Trim();
             process.WaitForExit(5000);
 
-            if (!string.IsNullOrWhiteSpace(output))
-            {
-                // Output may be "1.2.3" or "claude-code 1.2.3" — take last token
-                var parts = output.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                var versionString = parts[^1];
+            // Extract the first dotted-version substring anywhere in the output.
+            // Handles "1.2.3", "claude-code 1.2.3", and the current Claude Code
+            // format "2.1.143 (Claude Code)" (the old last-token parser picked
+            // "Code)" and gave up, falling back to a throttled User-Agent).
+            var match = System.Text.RegularExpressions.Regex.Match(output, @"\d+\.\d+(?:\.\d+)*");
+            if (match.Success)
+                return match.Value;
 
-                if (System.Text.RegularExpressions.Regex.IsMatch(versionString, @"^\d+\.\d+"))
-                {
-                    return versionString;
-                }
-            }
+            System.Diagnostics.Debug.WriteLine(
+                $"Version detection: no version in output from '{fileName} {arguments}'. stdout='{output}' stderr='{error}'");
         }
-        catch
+        catch (Exception ex)
         {
-            // Process not found or failed
+            System.Diagnostics.Debug.WriteLine($"Version detection failed for '{fileName}': {ex.Message}");
         }
 
         return null;
@@ -152,7 +154,11 @@ public class UsageApiService
                     $"Exception in GetUsageAsync (attempt {attempt + 1}/{MaxRetries + 1}): {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
 
-                if (attempt < MaxRetries)
+                // Only retry transient transport failures. A JsonException (or any
+                // non-network error) means the request SUCCEEDED but we mis-parsed —
+                // retrying just hammers the endpoint into a self-inflicted 429.
+                var transient = ex is System.Net.Http.HttpRequestException or TaskCanceledException;
+                if (transient && attempt < MaxRetries)
                 {
                     var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt));
                     await Task.Delay(delay);
