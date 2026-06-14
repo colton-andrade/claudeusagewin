@@ -25,5 +25,22 @@
   "duration_m": "{0}Min",
   "duration_now": "jetzt",
   "tooltip_session": "Sitzung: {0}% (Reset in {1})",
-  "tooltip_weekly": "Wöchentlich: {0}% (Reset in {1})"
+  "tooltip_weekly": "Wöchentlich: {0}% (Reset in {1})",
+  "claude_hooks": "Claude Code Hooks",
+  "enable_hooks": "Echtzeit-Hooks aktivieren",
+  "copy_hook_config": "Hook-Konfiguration kopieren",
+  "toast_notifications": "Benachrichtigungen",
+  "hook_status_listening": "Lauscht auf Port",
+  "hook_status_off": "Hook-Server nicht aktiv",
+  "hook_setup_prompt_title": "Claude Code Integration",
+  "hook_setup_prompt": "Klicken Sie, um Echtzeit-Benachrichtigungen zu aktivieren",
+  "live_thinking": "Denkt nach...",
+  "live_tool_use": "Verwendet: {0}",
+  "live_complete": "Aufgabe abgeschlossen",
+  "live_waiting": "Aktion erforderlich!",
+  "live_disconnected": "Nicht verbunden",
+  "toast_task_complete": "Claude Code hat die Aufgabe abgeschlossen",
+  "toast_needs_attention": "Claude Code benötigt Ihre Erlaubnis",
+  "toast_error": "Claude Code hat einen Fehler festgestellt",
+  "toast_token_limit": "Claude Code hat das Token-Limit erreicht"
 }

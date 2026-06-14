@@ -27,6 +27,16 @@ Rate limits are shared across claude.ai, Claude Code, and its IDE extensions, so
 - **Required API headers** — sends the `claude-code/*` User-Agent header (auto-detecting your installed Claude Code version) and `anthropic-beta` header
 - **Launch at Login** — optional Windows startup via the right-click context menu
 
+### Real-time session hooks (Beta)
+
+Optionally let the app react to your Claude Code sessions live — both **local** and **remote** (SSH / WSL / another machine):
+
+- **Live activity widget** — a floating desktop pill showing each active session's state: *thinking*, *running a tool*, *waiting for your input*, or *done*. Busy sessions pulse (green), sessions waiting on you pulse amber, and all dots pulse in sync. Multiple sessions appear as compact dots you can click to expand.
+- **Show/hide shortcut** — double-tap a key (default **Right Alt**, rebindable) to toggle the widget from any app.
+- **Toast notifications** — get a Windows toast when a session finishes or needs your input.
+- **Remote sessions in one command** — run a single `curl … | sh` on the remote machine to install a tiny relay. It fails fast when the widget is offline (so it never stalls your session) and reconnects on its own. Includes an optional Windows Firewall auto-rule (handles the WSL Hyper-V firewall too).
+- **Windows 11 Settings-style setup** — manage everything from a dedicated **Claude Code Hooks** window (tray menu): enable/disable hooks, pick the shortcut key, set up remote machines.
+
 ## Requirements
 
 - Windows 10 or Windows 11 (64-bit)
@@ -43,7 +53,7 @@ No build tools required. Download the latest `ClaudeUsage.exe` from the [Release
 |--------|-------------|
 | **Hover** over the tray icon | Tooltip shows session and weekly usage percentages with reset times |
 | **Left-click** the tray icon | Opens the detail popup with gauges, Sonnet/Overage cards, and reset countdowns |
-| **Right-click** the tray icon | Context menu: Refresh, Launch at Login, Language selector, Exit |
+| **Right-click** the tray icon | Context menu: Refresh, Show/Hide Widget, Launch at Login, Claude Code Hooks, Language selector, Exit |
 | **Escape** or click outside | Closes the detail popup |
 
 ### Tray icon not visible?
