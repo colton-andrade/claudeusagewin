@@ -362,28 +362,42 @@ public partial class App : System.Windows.Application
         oldIcon?.Dispose();
     }
 
+    private bool _applyingTheme;
+
     private void OnThemeChanged(Wpf.Ui.Appearance.ApplicationTheme currentTheme, System.Windows.Media.Color systemAccent)
     {
-        // Apply the new theme to app-level resources (context menu, etc.)
+        // ApplicationThemeManager.Apply() below re-raises the Changed event this
+        // handler is subscribed to; without this guard an OS light/dark switch
+        // recursed until the stack overflowed (0xC00000FD). Ignore re-entry.
+        if (_applyingTheme) return;
+        _applyingTheme = true;
         try
         {
-            ApplicationThemeManager.Apply(currentTheme);
-            CreateContextMenu();
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Theme apply error: {ex.Message}");
-        }
+            // Apply the new theme to app-level resources (context menu, etc.)
+            try
+            {
+                ApplicationThemeManager.Apply(currentTheme);
+                CreateContextMenu();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Theme apply error: {ex.Message}");
+            }
 
-        // Refresh the icon with current usage data to apply new theme colors
-        if (_lastUsageData != null)
+            // Refresh the icon with current usage data to apply new theme colors
+            if (_lastUsageData != null)
+            {
+                var sessionUtilization = _lastUsageData.FiveHour?.Utilization ?? 0;
+                var maxUtilization = Math.Max(
+                    sessionUtilization,
+                    _lastUsageData.SevenDay?.Utilization ?? 0
+                );
+                UpdateTrayIcon((int)sessionUtilization, maxUtilization);
+            }
+        }
+        finally
         {
-            var sessionUtilization = _lastUsageData.FiveHour?.Utilization ?? 0;
-            var maxUtilization = Math.Max(
-                sessionUtilization,
-                _lastUsageData.SevenDay?.Utilization ?? 0
-            );
-            UpdateTrayIcon((int)sessionUtilization, maxUtilization);
+            _applyingTheme = false;
         }
     }
 
