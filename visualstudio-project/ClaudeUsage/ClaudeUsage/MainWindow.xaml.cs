@@ -18,6 +18,7 @@ public partial class MainWindow : FluentWindow
     // Brushes kept for backward compat (tray icon colors in App.xaml.cs reference these indirectly)
 
     private double _bottomEdge;
+    private bool _hasRenderedOnce;
     private UsageData? _currentData;
     private readonly DispatcherTimer _countdownTimer;
 
@@ -43,6 +44,10 @@ public partial class MainWindow : FluentWindow
                 Top = _bottomEdge - ActualHeight;
             }
         };
+
+        // Wire each fill bar's parent SizeChanged exactly once (not per refresh)
+        WireBarFill(SonnetFillBar);
+        WireBarFill(OverageFillBar);
 
         // Listen for theme changes to update gauge colors
         ApplicationThemeManager.Changed += OnThemeChanged;
@@ -88,22 +93,62 @@ public partial class MainWindow : FluentWindow
 
     public void ShowWithAnimation(double targetLeft, double bottomEdge)
     {
-        Left = targetLeft;
-
-        // Show off-screen first to measure content height
-        Top = bottomEdge;
+        // Start hidden so the user never sees a stale position.
         Opacity = 0;
+        Left = targetLeft;
+        Top = bottomEdge;
         Show();
         UpdateLayout();
 
-        // Now we know ActualHeight — position window so bottom aligns with bottomEdge
-        _bottomEdge = bottomEdge - 10;
-        var finalTop = _bottomEdge - ActualHeight;
+        if (_hasRenderedOnce)
+        {
+            // Window has rendered before (it's only hidden, not closed), so
+            // ActualWidth/ActualHeight are already final — position immediately.
+            PositionAndAnimate(targetLeft, bottomEdge);
+            return;
+        }
 
-        // Slide up from slightly below
+        // First open: ActualWidth/ActualHeight are NOT final until the content
+        // has actually rendered (Mica FluentWindow + custom gauge controls settle
+        // after the first frame, later than DispatcherPriority.Loaded). Defer the
+        // real positioning to ContentRendered, with an ApplicationIdle backstop in
+        // case ContentRendered doesn't fire. A guard ensures we position only once.
+        var positioned = false;
+        void Position()
+        {
+            if (positioned) return;
+            positioned = true;
+            _hasRenderedOnce = true;
+            PositionAndAnimate(targetLeft, bottomEdge);
+        }
+        void OnRendered(object? s, EventArgs e) { ContentRendered -= OnRendered; Position(); }
+        ContentRendered += OnRendered;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new Action(Position));
+    }
+
+    // Place the window so its bottom aligns with bottomEdge, clamped fully inside
+    // the monitor work area, then fade + slide it in. Requires ActualWidth/Height
+    // to be final (caller guarantees this).
+    private const double EdgeMargin = 10;
+
+    private void PositionAndAnimate(double targetLeft, double bottomEdge)
+    {
+        var workArea = System.Windows.SystemParameters.WorkArea;
+
+        _bottomEdge = bottomEdge - EdgeMargin;
+        var finalTop = _bottomEdge - ActualHeight;
+        finalTop = Math.Max(workArea.Top, Math.Min(finalTop, workArea.Bottom - ActualHeight));
+
+        // Anchor with a consistent right margin. The caller derives targetLeft from
+        // the Width property, which is unreliable on first open (320 before the
+        // content renders, ~460 after). Clamp against ActualWidth (always correct
+        // here) so the right margin is identical on first open and every reopen.
+        var maxLeft = workArea.Right - ActualWidth - EdgeMargin;
+        var finalLeft = Math.Max(workArea.Left, Math.Min(targetLeft, maxLeft));
+
+        Left = finalLeft;
         Top = finalTop + 20;
         Opacity = 1;
-
         _countdownTimer.Start();
 
         var slideAnimation = new DoubleAnimation
@@ -243,17 +288,27 @@ public partial class MainWindow : FluentWindow
         return new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x52, 0xD1, 0x7C));
     }
 
+    // Wire a fill bar's parent SizeChanged exactly once (called from the ctor).
+    // SetBarFill previously subscribed a new handler on every refresh; those
+    // accumulated unbounded over the app lifetime.
+    private void WireBarFill(System.Windows.Controls.Border fillBar)
+    {
+        if (fillBar.Parent is System.Windows.Controls.Grid parent)
+            parent.SizeChanged += (s, e) => ApplyBarWidth(fillBar);
+    }
+
     private void SetBarFill(System.Windows.Controls.Border fillBar, int percent)
     {
-        var parent = fillBar.Parent as System.Windows.Controls.Grid;
-        if (parent == null) return;
+        // Store the latest percent and recompute the width; the SizeChanged
+        // handler wired once in WireBarFill recomputes on resize.
+        fillBar.Tag = Math.Clamp(percent, 0, 100);
+        ApplyBarWidth(fillBar);
+    }
 
-        // Bind fill width to parent width * percentage
-        parent.SizeChanged += (s, e) =>
-        {
-            fillBar.Width = parent.ActualWidth * Math.Clamp(percent, 0, 100) / 100.0;
-        };
-        fillBar.Width = parent.ActualWidth * Math.Clamp(percent, 0, 100) / 100.0;
+    private static void ApplyBarWidth(System.Windows.Controls.Border fillBar)
+    {
+        if (fillBar.Parent is System.Windows.Controls.Grid parent && fillBar.Tag is int pct)
+            fillBar.Width = parent.ActualWidth * pct / 100.0;
     }
 
     private void UpdateBarGradient(System.Windows.Media.GradientStop gradStart, System.Windows.Media.GradientStop gradEnd, int percent)

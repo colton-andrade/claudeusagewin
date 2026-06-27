@@ -44,6 +44,9 @@ public partial class App : System.Windows.Application
 
     protected override async void OnStartup(System.Windows.StartupEventArgs e)
     {
+        // Register top-level crash logging before anything else can throw.
+        SetupCrashLogging();
+
         base.OnStartup(e);
 
         // Initialize localization (saved preference or auto-detect)
@@ -84,6 +87,31 @@ public partial class App : System.Windows.Application
 
         // Initialize hook system
         await InitializeHookSystem();
+    }
+
+    // Top-level exception breadcrumb: append unhandled exceptions to a dated log
+    // so a future "it just vanished" is diagnosable. NOTE: a stack overflow is
+    // uncatchable and will NOT reach these handlers; this covers every other class.
+    private void SetupCrashLogging()
+    {
+        void Log(string source, Exception? ex)
+        {
+            try
+            {
+                var dir = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "ClaudeUsage", "logs");
+                System.IO.Directory.CreateDirectory(dir);
+                var file = System.IO.Path.Combine(dir, $"crash-{DateTime.Now:yyyyMMdd}.log");
+                System.IO.File.AppendAllText(file,
+                    $"{DateTime.Now:O} [{source}] {ex?.GetType().FullName}: {ex?.Message}\n{ex?.StackTrace}\n\n");
+            }
+            catch { /* logging must never throw */ }
+        }
+
+        DispatcherUnhandledException += (s, e) => Log("Dispatcher", e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (s, e) => Log("AppDomain", e.ExceptionObject as Exception);
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (s, e) => Log("Task", e.Exception);
     }
 
     private async Task InitializeHookSystem()
@@ -362,28 +390,42 @@ public partial class App : System.Windows.Application
         oldIcon?.Dispose();
     }
 
+    private bool _applyingTheme;
+
     private void OnThemeChanged(Wpf.Ui.Appearance.ApplicationTheme currentTheme, System.Windows.Media.Color systemAccent)
     {
-        // Apply the new theme to app-level resources (context menu, etc.)
+        // ApplicationThemeManager.Apply() below re-raises the Changed event this
+        // handler is subscribed to; without this guard an OS light/dark switch
+        // recursed until the stack overflowed (0xC00000FD). Ignore re-entry.
+        if (_applyingTheme) return;
+        _applyingTheme = true;
         try
         {
-            ApplicationThemeManager.Apply(currentTheme);
-            CreateContextMenu();
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Theme apply error: {ex.Message}");
-        }
+            // Apply the new theme to app-level resources (context menu, etc.)
+            try
+            {
+                ApplicationThemeManager.Apply(currentTheme);
+                CreateContextMenu();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Theme apply error: {ex.Message}");
+            }
 
-        // Refresh the icon with current usage data to apply new theme colors
-        if (_lastUsageData != null)
+            // Refresh the icon with current usage data to apply new theme colors
+            if (_lastUsageData != null)
+            {
+                var sessionUtilization = _lastUsageData.FiveHour?.Utilization ?? 0;
+                var maxUtilization = Math.Max(
+                    sessionUtilization,
+                    _lastUsageData.SevenDay?.Utilization ?? 0
+                );
+                UpdateTrayIcon((int)sessionUtilization, maxUtilization);
+            }
+        }
+        finally
         {
-            var sessionUtilization = _lastUsageData.FiveHour?.Utilization ?? 0;
-            var maxUtilization = Math.Max(
-                sessionUtilization,
-                _lastUsageData.SevenDay?.Utilization ?? 0
-            );
-            UpdateTrayIcon((int)sessionUtilization, maxUtilization);
+            _applyingTheme = false;
         }
     }
 
