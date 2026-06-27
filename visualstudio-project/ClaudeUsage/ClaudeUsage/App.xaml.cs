@@ -44,6 +44,9 @@ public partial class App : System.Windows.Application
 
     protected override async void OnStartup(System.Windows.StartupEventArgs e)
     {
+        // Register top-level crash logging before anything else can throw.
+        SetupCrashLogging();
+
         base.OnStartup(e);
 
         // Initialize localization (saved preference or auto-detect)
@@ -84,6 +87,31 @@ public partial class App : System.Windows.Application
 
         // Initialize hook system
         await InitializeHookSystem();
+    }
+
+    // Top-level exception breadcrumb: append unhandled exceptions to a dated log
+    // so a future "it just vanished" is diagnosable. NOTE: a stack overflow is
+    // uncatchable and will NOT reach these handlers; this covers every other class.
+    private void SetupCrashLogging()
+    {
+        void Log(string source, Exception? ex)
+        {
+            try
+            {
+                var dir = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "ClaudeUsage", "logs");
+                System.IO.Directory.CreateDirectory(dir);
+                var file = System.IO.Path.Combine(dir, $"crash-{DateTime.Now:yyyyMMdd}.log");
+                System.IO.File.AppendAllText(file,
+                    $"{DateTime.Now:O} [{source}] {ex?.GetType().FullName}: {ex?.Message}\n{ex?.StackTrace}\n\n");
+            }
+            catch { /* logging must never throw */ }
+        }
+
+        DispatcherUnhandledException += (s, e) => Log("Dispatcher", e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (s, e) => Log("AppDomain", e.ExceptionObject as Exception);
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (s, e) => Log("Task", e.Exception);
     }
 
     private async Task InitializeHookSystem()
