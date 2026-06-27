@@ -92,41 +92,47 @@ public partial class MainWindow : FluentWindow
 
     public void ShowWithAnimation(double targetLeft, double bottomEdge)
     {
-        Left = targetLeft;
+        var workArea = System.Windows.SystemParameters.WorkArea;
 
-        // Show off-screen first to measure content height
-        Top = bottomEdge;
+        Left = Math.Max(workArea.Left, Math.Min(targetLeft, workArea.Right - ActualWidth));
+        Top = bottomEdge;     // temporary start; corrected after the layout pass below
         Opacity = 0;
         Show();
         UpdateLayout();
 
-        // Now we know ActualHeight — position window so bottom aligns with bottomEdge
-        _bottomEdge = bottomEdge - 10;
-        var finalTop = _bottomEdge - ActualHeight;
-
-        // Slide up from slightly below
-        Top = finalTop + 20;
-        Opacity = 1;
-
-        _countdownTimer.Start();
-
-        var slideAnimation = new DoubleAnimation
+        // On first open ActualHeight is not final until the layout pass completes,
+        // so positioning off a single UpdateLayout() placed the window too low and
+        // its bottom-right corner ran off-screen. Position at Loaded priority (after
+        // the realized height is known) and clamp to the monitor work area.
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
         {
-            From = finalTop + 20,
-            To = finalTop,
-            Duration = TimeSpan.FromMilliseconds(200),
-            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
-        };
-        slideAnimation.Completed += (s, e) =>
-        {
-            // CRITICAL: clear animation so Top can be set freely by SizeChanged
-            BeginAnimation(TopProperty, null);
-            Top = finalTop;
-            _bottomEdge = Top + ActualHeight;
-        };
+            _bottomEdge = bottomEdge - 10;
+            var finalTop = _bottomEdge - ActualHeight;
+            finalTop = Math.Max(workArea.Top, Math.Min(finalTop, workArea.Bottom - ActualHeight));
 
-        BeginAnimation(TopProperty, slideAnimation);
-        Activate();
+            Left = Math.Max(workArea.Left, Math.Min(targetLeft, workArea.Right - ActualWidth));
+            Top = finalTop + 20;
+            Opacity = 1;
+            _countdownTimer.Start();
+
+            var slideAnimation = new DoubleAnimation
+            {
+                From = finalTop + 20,
+                To = finalTop,
+                Duration = TimeSpan.FromMilliseconds(200),
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+            };
+            slideAnimation.Completed += (s, e) =>
+            {
+                // CRITICAL: clear animation so Top can be set freely by SizeChanged
+                BeginAnimation(TopProperty, null);
+                Top = finalTop;
+                _bottomEdge = Top + ActualHeight;
+            };
+
+            BeginAnimation(TopProperty, slideAnimation);
+            Activate();
+        }));
     }
 
     public void HideWithAnimation()
