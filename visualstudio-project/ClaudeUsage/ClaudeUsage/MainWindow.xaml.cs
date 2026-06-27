@@ -18,6 +18,7 @@ public partial class MainWindow : FluentWindow
     // Brushes kept for backward compat (tray icon colors in App.xaml.cs reference these indirectly)
 
     private double _bottomEdge;
+    private bool _hasRenderedOnce;
     private UsageData? _currentData;
     private readonly DispatcherTimer _countdownTimer;
 
@@ -92,47 +93,81 @@ public partial class MainWindow : FluentWindow
 
     public void ShowWithAnimation(double targetLeft, double bottomEdge)
     {
-        var workArea = System.Windows.SystemParameters.WorkArea;
-
-        Left = Math.Max(workArea.Left, Math.Min(targetLeft, workArea.Right - ActualWidth));
-        Top = bottomEdge;     // temporary start; corrected after the layout pass below
+        // Start hidden so the user never sees a stale position.
         Opacity = 0;
+        Left = targetLeft;
+        Top = bottomEdge;
         Show();
         UpdateLayout();
 
-        // On first open ActualHeight is not final until the layout pass completes,
-        // so positioning off a single UpdateLayout() placed the window too low and
-        // its bottom-right corner ran off-screen. Position at Loaded priority (after
-        // the realized height is known) and clamp to the monitor work area.
-        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+        if (_hasRenderedOnce)
         {
-            _bottomEdge = bottomEdge - 10;
-            var finalTop = _bottomEdge - ActualHeight;
-            finalTop = Math.Max(workArea.Top, Math.Min(finalTop, workArea.Bottom - ActualHeight));
+            // Window has rendered before (it's only hidden, not closed), so
+            // ActualWidth/ActualHeight are already final — position immediately.
+            PositionAndAnimate(targetLeft, bottomEdge);
+            return;
+        }
 
-            Left = Math.Max(workArea.Left, Math.Min(targetLeft, workArea.Right - ActualWidth));
-            Top = finalTop + 20;
-            Opacity = 1;
-            _countdownTimer.Start();
+        // First open: ActualWidth/ActualHeight are NOT final until the content
+        // has actually rendered (Mica FluentWindow + custom gauge controls settle
+        // after the first frame, later than DispatcherPriority.Loaded). Defer the
+        // real positioning to ContentRendered, with an ApplicationIdle backstop in
+        // case ContentRendered doesn't fire. A guard ensures we position only once.
+        var positioned = false;
+        void Position()
+        {
+            if (positioned) return;
+            positioned = true;
+            _hasRenderedOnce = true;
+            PositionAndAnimate(targetLeft, bottomEdge);
+        }
+        void OnRendered(object? s, EventArgs e) { ContentRendered -= OnRendered; Position(); }
+        ContentRendered += OnRendered;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new Action(Position));
+    }
 
-            var slideAnimation = new DoubleAnimation
-            {
-                From = finalTop + 20,
-                To = finalTop,
-                Duration = TimeSpan.FromMilliseconds(200),
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
-            };
-            slideAnimation.Completed += (s, e) =>
-            {
-                // CRITICAL: clear animation so Top can be set freely by SizeChanged
-                BeginAnimation(TopProperty, null);
-                Top = finalTop;
-                _bottomEdge = Top + ActualHeight;
-            };
+    // Place the window so its bottom aligns with bottomEdge, clamped fully inside
+    // the monitor work area, then fade + slide it in. Requires ActualWidth/Height
+    // to be final (caller guarantees this).
+    private const double EdgeMargin = 10;
 
-            BeginAnimation(TopProperty, slideAnimation);
-            Activate();
-        }));
+    private void PositionAndAnimate(double targetLeft, double bottomEdge)
+    {
+        var workArea = System.Windows.SystemParameters.WorkArea;
+
+        _bottomEdge = bottomEdge - EdgeMargin;
+        var finalTop = _bottomEdge - ActualHeight;
+        finalTop = Math.Max(workArea.Top, Math.Min(finalTop, workArea.Bottom - ActualHeight));
+
+        // Anchor with a consistent right margin. The caller derives targetLeft from
+        // the Width property, which is unreliable on first open (320 before the
+        // content renders, ~460 after). Clamp against ActualWidth (always correct
+        // here) so the right margin is identical on first open and every reopen.
+        var maxLeft = workArea.Right - ActualWidth - EdgeMargin;
+        var finalLeft = Math.Max(workArea.Left, Math.Min(targetLeft, maxLeft));
+
+        Left = finalLeft;
+        Top = finalTop + 20;
+        Opacity = 1;
+        _countdownTimer.Start();
+
+        var slideAnimation = new DoubleAnimation
+        {
+            From = finalTop + 20,
+            To = finalTop,
+            Duration = TimeSpan.FromMilliseconds(200),
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+        };
+        slideAnimation.Completed += (s, e) =>
+        {
+            // CRITICAL: clear animation so Top can be set freely by SizeChanged
+            BeginAnimation(TopProperty, null);
+            Top = finalTop;
+            _bottomEdge = Top + ActualHeight;
+        };
+
+        BeginAnimation(TopProperty, slideAnimation);
+        Activate();
     }
 
     public void HideWithAnimation()
