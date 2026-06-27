@@ -44,6 +44,10 @@ public partial class MainWindow : FluentWindow
             }
         };
 
+        // Wire each fill bar's parent SizeChanged exactly once (not per refresh)
+        WireBarFill(SonnetFillBar);
+        WireBarFill(OverageFillBar);
+
         // Listen for theme changes to update gauge colors
         ApplicationThemeManager.Changed += OnThemeChanged;
         UpdateGaugeTheme();
@@ -243,17 +247,27 @@ public partial class MainWindow : FluentWindow
         return new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x52, 0xD1, 0x7C));
     }
 
+    // Wire a fill bar's parent SizeChanged exactly once (called from the ctor).
+    // SetBarFill previously subscribed a new handler on every refresh; those
+    // accumulated unbounded over the app lifetime.
+    private void WireBarFill(System.Windows.Controls.Border fillBar)
+    {
+        if (fillBar.Parent is System.Windows.Controls.Grid parent)
+            parent.SizeChanged += (s, e) => ApplyBarWidth(fillBar);
+    }
+
     private void SetBarFill(System.Windows.Controls.Border fillBar, int percent)
     {
-        var parent = fillBar.Parent as System.Windows.Controls.Grid;
-        if (parent == null) return;
+        // Store the latest percent and recompute the width; the SizeChanged
+        // handler wired once in WireBarFill recomputes on resize.
+        fillBar.Tag = Math.Clamp(percent, 0, 100);
+        ApplyBarWidth(fillBar);
+    }
 
-        // Bind fill width to parent width * percentage
-        parent.SizeChanged += (s, e) =>
-        {
-            fillBar.Width = parent.ActualWidth * Math.Clamp(percent, 0, 100) / 100.0;
-        };
-        fillBar.Width = parent.ActualWidth * Math.Clamp(percent, 0, 100) / 100.0;
+    private static void ApplyBarWidth(System.Windows.Controls.Border fillBar)
+    {
+        if (fillBar.Parent is System.Windows.Controls.Grid parent && fillBar.Tag is int pct)
+            fillBar.Width = parent.ActualWidth * pct / 100.0;
     }
 
     private void UpdateBarGradient(System.Windows.Media.GradientStop gradStart, System.Windows.Media.GradientStop gradEnd, int percent)
